@@ -1,0 +1,46 @@
+### EKF config — Caddy AI2 (Ackermann / bicycle-model vehicle) ###
+ekf_filter_node:
+    ros__parameters:
+
+        frequency: 30.0
+
+        # The Caddy AI2 is an agricultural vehicle that operates on flat terrain.
+        two_d_mode: true
+
+        publish_tf: true
+
+        map_frame: map
+        odom_frame: odom
+        base_link_frame: base_footprint
+        world_frame: odom
+
+        # --- Wheel odometry from bicycle_steering_controller ---
+        # Topic: /bicycle_steering_controller/odometry  (nav_msgs/Odometry)
+        # Ackermann kinematic model: only forward velocity (vx) and yaw rate (vyaw)
+        # are geometrically meaningful — lateral slip (vy) is assumed zero.
+        odom0: /bicycle_steering_controller/odometry
+        odom0_config: [false, false, false,
+                       false, false, false,
+                       true,  false, false,
+                       false, false, true,
+                       false, false, false]
+        # x_pos, y_pos, z_pos,
+        # roll,  pitch, yaw,
+        # vx,    vy,    vz,
+        # vroll, vpitch,vyaw,
+        # ax,    ay,    az
+
+        # --- IMU (SBG IG-500N simulated) ---
+        # Topic: /imu  (sensor_msgs/Imu)
+        # Fuse yaw rate and forward/lateral linear acceleration.
+        imu0: /imu
+        imu0_config: [false, false, false,
+                      false, false, false,
+                      false, false, false,
+                      false, false, true,
+                      true,  true,  false]
+        # x_pos, y_pos, z_pos,
+        # roll,  pitch, yaw,
+        # vx,    vy,    vz,
+        # vroll, vpitch,vyaw,
+        # ax,    ay,    az
