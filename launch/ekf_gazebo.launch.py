@@ -23,6 +23,7 @@ def generate_launch_description():
 
     ekf_config_file = LaunchConfiguration('ekf_config_file')
     use_sim_time = LaunchConfiguration('use_sim_time')
+    namespace = LaunchConfiguration('namespace')
 
     declare_ekf_config_file_cmd = DeclareLaunchArgument(
         name='ekf_config_file',
@@ -36,10 +37,17 @@ def generate_launch_description():
         description='Use simulation (Gazebo) clock if true'
     )
 
+    declare_namespace_cmd = DeclareLaunchArgument(
+        name='namespace',
+        default_value='',
+        description='ROS 2 namespace for the EKF node'
+    )
+
     start_ekf_node_cmd = Node(
         package='robot_localization',
         executable='ekf_node',
         name='ekf_filter_node',
+        namespace=namespace,
         output='screen',
         parameters=[
             ekf_config_file,
@@ -50,6 +58,7 @@ def generate_launch_description():
     ld = LaunchDescription()
     ld.add_action(declare_ekf_config_file_cmd)
     ld.add_action(declare_use_sim_time_cmd)
+    ld.add_action(declare_namespace_cmd)
     ld.add_action(start_ekf_node_cmd)
 
     return ld
