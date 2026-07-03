@@ -51,8 +51,20 @@ def generate_launch_description():
         output='screen',
         parameters=[
             ekf_config_file,
-            {'use_sim_time': use_sim_time}
-        ]
+            {
+                'use_sim_time': use_sim_time,
+                # Explicit overrides so namespaced node always gets these values
+                # even if YAML short-name matching fails under namespace.
+                'publish_tf': True,
+                'odom_frame': 'odom',
+                'base_link_frame': 'base_footprint',
+                'world_frame': 'odom',
+            }
+        ],
+        remappings=[
+            ('tf', '/tf'),
+            ('tf_static', '/tf_static'),
+        ],
     )
 
     ld = LaunchDescription()
