@@ -1,5 +1,7 @@
 ### EKF config — Caddy AI2 (Ackermann / bicycle-model vehicle) ###
-ekf_filter_node:
+# /** wildcard matches the node regardless of its ROS 2 namespace,
+# so this file works whether the node runs as /ekf_filter_node or /caddy_ai2/ekf_filter_node.
+/**:
     ros__parameters:
 
         frequency: 30.0
