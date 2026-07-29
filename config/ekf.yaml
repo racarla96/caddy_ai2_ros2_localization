@@ -1,6 +1,12 @@
 ### EKF config — Caddy AI2 (Ackermann / bicycle-model vehicle) ###
 # /** wildcard matches the node regardless of its ROS 2 namespace,
 # so this file works whether the node runs as /ekf_filter_node or /caddy_ai2/ekf_filter_node.
+#
+# Calibration strategy (incremental):
+#   Step 1 (current): odom only — EKF output should match raw odom closely
+#   Step 2: enable imu0_config vyaw (row 4 col 3) — check if gyro improves yaw
+#   Step 3: tune process_noise_covariance if drift persists
+#   Do NOT fuse ax/ay from IMU — double integration causes unbounded drift
 /**:
     ros__parameters:
 
@@ -17,32 +23,47 @@
         world_frame: odom
 
         # --- Wheel odometry from bicycle_steering_controller ---
-        # Topic: /bicycle_steering_controller/odometry  (nav_msgs/Odometry)
-        # Ackermann kinematic model: only forward velocity (vx) and yaw rate (vyaw)
-        # are geometrically meaningful — lateral slip (vy) is assumed zero.
+        # Ackermann model: only vx and vyaw are meaningful (no lateral slip).
+        # odom0_relative: true because the controller publishes incremental velocity,
+        # not absolute position — prevents jump on first message.
         odom0: bicycle_steering_controller/odometry
         odom0_config: [false, false, false,
                        false, false, false,
                        true,  false, false,
                        false, false, true,
                        false, false, false]
-        # x_pos, y_pos, z_pos,
-        # roll,  pitch, yaw,
-        # vx,    vy,    vz,
-        # vroll, vpitch,vyaw,
-        # ax,    ay,    az
+        odom0_relative: true
+        # x_pos, y_pos, z_pos | roll, pitch, yaw | vx, vy, vz | vroll, vpitch, vyaw | ax, ay, az
 
         # --- IMU (SBG IG-500N simulated) ---
-        # Topic: /imu  (sensor_msgs/Imu)
-        # Fuse yaw rate and forward/lateral linear acceleration.
+        # Step 1: all disabled — confirm EKF ≈ raw odom before adding IMU
+        # Step 2: enable vyaw (set index [11] to true) to fuse gyro yaw rate
+        # Never fuse ax/ay — double integration causes unbounded position drift
         imu0: sbg_ig500n/imu
         imu0_config: [false, false, false,
                       false, false, false,
                       false, false, false,
                       false, false, true,
-                      true,  true,  false]
-        # x_pos, y_pos, z_pos,
-        # roll,  pitch, yaw,
-        # vx,    vy,    vz,
-        # vroll, vpitch,vyaw,
-        # ax,    ay,    az
+                      false, false, false]
+        imu0_relative: true
+        # x_pos, y_pos, z_pos | roll, pitch, yaw | vx, vy, vz | vroll, vpitch, vyaw | ax, ay, az
+
+        # --- Process noise covariance (Q matrix) ---
+        # Diagonal: [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+        # Higher = trust prediction less, react faster to measurements
+        # Lower  = smoother but slower to correct
+        process_noise_covariance: [0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.05, 0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.06, 0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.025, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.025,0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.04, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.02, 0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.015]
