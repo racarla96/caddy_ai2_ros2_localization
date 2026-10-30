@@ -53,8 +53,6 @@ def generate_launch_description():
             ekf_config_file,
             {
                 'use_sim_time': use_sim_time,
-                # Explicit overrides so namespaced node always gets these values
-                # even if YAML short-name matching fails under namespace.
                 'publish_tf': True,
                 'odom_frame': 'odom',
                 'base_link_frame': 'base_footprint',
@@ -67,10 +65,38 @@ def generate_launch_description():
         ],
     )
 
+    # navsat_transform_node converts GPS NavSatFix (lat/lon) → local Odometry (x/y)
+    # and feeds it into the EKF as odom1 to anchor absolute position.
+    start_navsat_transform_cmd = Node(
+        package='robot_localization',
+        executable='navsat_transform_node',
+        name='navsat_transform_node',
+        namespace=namespace,
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'magnetic_declination_radians': 0.0,
+            'yaw_offset': 0.0,
+            'zero_altitude': True,
+            'broadcast_utm_transform': False,
+            'publish_filtered_gps': False,
+            'use_odometry_yaw': False,
+            'wait_for_datum': False,
+        }],
+        remappings=[
+            ('imu/data',           'sbg_ig500n/imu'),
+            ('gps/fix',            'sbg_ig500n/navsat'),
+            ('odometry/filtered',  'odometry/filtered'),
+            ('tf',                 '/tf'),
+            ('tf_static',          '/tf_static'),
+        ],
+    )
+
     ld = LaunchDescription()
     ld.add_action(declare_ekf_config_file_cmd)
     ld.add_action(declare_use_sim_time_cmd)
     ld.add_action(declare_namespace_cmd)
     ld.add_action(start_ekf_node_cmd)
+    ld.add_action(start_navsat_transform_cmd)
 
     return ld

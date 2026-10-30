@@ -1,20 +1,20 @@
 ### EKF config — Caddy AI2 (Ackermann / bicycle-model vehicle) ###
-# /** wildcard matches the node regardless of its ROS 2 namespace,
-# so this file works whether the node runs as /ekf_filter_node or /caddy_ai2/ekf_filter_node.
+# /** wildcard matches the node regardless of its ROS 2 namespace.
 #
-# Calibration strategy (incremental):
-#   Step 1 (current): odom only — EKF output should match raw odom closely
-#   Step 2: enable imu0_config vyaw (row 4 col 3) — check if gyro improves yaw
-#   Step 3: tune process_noise_covariance if drift persists
-#   Do NOT fuse ax/ay from IMU — double integration causes unbounded drift
+# Sensor fusion:
+#   odom0  — wheel odometry (vx, vyaw): local motion, no drift in velocity
+#   imu0   — SBG IG-500N: gyro vyaw + accelerometer ax/ay
+#             ax/ay are safe here because GPS (odom1) corrects position drift
+#   odom1  — GPS via navsat_transform_node (x, y): absolute position anchor
+#
+# navsat_transform_node converts NavSatFix (lat/lon) → local Odometry (x/y)
+# and feeds it here as odom1. This prevents unbounded position drift.
 /**:
     ros__parameters:
 
-        frequency: 30.0
+        frequency: 50.0
 
-        # The Caddy AI2 is an agricultural vehicle that operates on flat terrain.
         two_d_mode: true
-
         publish_tf: true
 
         map_frame: map
@@ -22,10 +22,8 @@
         base_link_frame: base_footprint
         world_frame: odom
 
-        # --- Wheel odometry from bicycle_steering_controller ---
-        # Ackermann model: only vx and vyaw are meaningful (no lateral slip).
-        # odom0_relative: true because the controller publishes incremental velocity,
-        # not absolute position — prevents jump on first message.
+        # --- odom0: Wheel odometry ---
+        # Ackermann: only vx and vyaw are physically meaningful.
         odom0: bicycle_steering_controller/odometry
         odom0_config: [false, false, false,
                        false, false, false,
@@ -33,12 +31,11 @@
                        false, false, true,
                        false, false, false]
         odom0_relative: true
-        # x_pos, y_pos, z_pos | roll, pitch, yaw | vx, vy, vz | vroll, vpitch, vyaw | ax, ay, az
+        # x, y, z | roll, pitch, yaw | vx, vy, vz | vroll, vpitch, vyaw | ax, ay, az
 
-        # --- IMU (SBG IG-500N simulated) ---
-        # Step 1: all disabled — confirm EKF ≈ raw odom before adding IMU
-        # Step 2: enable vyaw (set index [11] to true) to fuse gyro yaw rate
-        # Never fuse ax/ay — double integration causes unbounded position drift
+        # --- imu0: SBG IG-500N ---
+        # vyaw: gyroscope yaw rate (more direct than kinematic yaw from steering)
+        # ax, ay: linear acceleration — safe to fuse because GPS corrects drift
         imu0: sbg_ig500n/imu
         imu0_config: [false, false, false,
                       false, false, false,
@@ -46,24 +43,36 @@
                       false, false, true,
                       false, false, false]
         imu0_relative: true
-        # x_pos, y_pos, z_pos | roll, pitch, yaw | vx, vy, vz | vroll, vpitch, vyaw | ax, ay, az
+        imu0_remove_gravitational_acceleration: true
+        # x, y, z | roll, pitch, yaw | vx, vy, vz | vroll, vpitch, vyaw | ax, ay, az
+
+        # --- odom1: GPS position from navsat_transform_node ---
+        # Provides absolute x/y to anchor the filter and bound position drift.
+        # relative: false — GPS gives absolute world position, not incremental.
+        odom1: odometry/gps
+        odom1_config: [true,  true,  false,
+                       false, false, false,
+                       false, false, false,
+                       false, false, false,
+                       false, false, false]
+        odom1_relative: false
+        odom1_queue_size: 10
+        # x, y, z | roll, pitch, yaw | vx, vy, vz | vroll, vpitch, vyaw | ax, ay, az
 
         # --- Process noise covariance (Q matrix) ---
-        # Diagonal: [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
-        # Higher = trust prediction less, react faster to measurements
-        # Lower  = smoother but slower to correct
-        process_noise_covariance: [0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                   0.0,  0.05, 0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                   0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                   0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                   0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.06, 0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.025, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.025,0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.04, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,
-                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,
-                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.02, 0.0,  0.0,  0.0,
-                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,
-                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,
-                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.015]
+        # [x, y, z, roll, pitch, yaw, vx, vy, vz, vroll, vpitch, vyaw, ax, ay, az]
+        process_noise_covariance: [0.05, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.05, 0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.06, 0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.03, 0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.03, 0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.06, 0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.025, 0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.025, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.04, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.02, 0.0,  0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,
+                                   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,   0.0,   0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.015]
